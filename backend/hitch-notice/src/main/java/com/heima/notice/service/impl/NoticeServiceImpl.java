@@ -13,10 +13,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 @Service
 public class NoticeServiceImpl implements NoticeService {
@@ -27,6 +24,8 @@ public class NoticeServiceImpl implements NoticeService {
     @Override
     public void addNotice(NoticePO noticePO) {
         noticePO.setCreatedTime(new Date());
+        noticePO.setRead(false);
+
         //mongoDB 保存消息
         mongoTemplate.save(noticePO, HtichConstants.NOTICE_COLLECTION);
     }
@@ -66,6 +65,25 @@ public class NoticeServiceImpl implements NoticeService {
         List<NoticePO> noticePOList = mongoTemplate.find(query, NoticePO.class, HtichConstants.NOTICE_COLLECTION);
         Collections.reverse(noticePOList);
         return noticePOList;
+    }
+
+    @Override
+    public List<NoticePO> findUnreadMessages(String receiverId) {
+        Criteria criteria = new Criteria().where("receiverId").is(receiverId);
+        criteria.and("read").is(false); // 只查未读
+
+        Query query = new Query(criteria);
+
+        query.with(Sort.by(Sort.Order.asc("createdTime")));
+
+        return mongoTemplate.find(query,NoticePO.class, HtichConstants.NOTICE_COLLECTION);
+    }
+
+    @Override
+    public void markAsRead(String noticeId) {
+        Query query = new Query(Criteria.where("_id").is(noticeId));
+        Update update = Update.update("read", true);
+        mongoTemplate.updateFirst(query,update, NoticePO.class, HtichConstants.NOTICE_COLLECTION);
     }
 
 }

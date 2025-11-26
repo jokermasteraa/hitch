@@ -59,6 +59,11 @@ public class NoticeHandler {
         if (check) {
             noticeService.addNotice(noticePO);
             sendOK = true;
+            // 将MongoDB生成的ID回填给NoticeVO
+            // 如果不加这一步，发给MQ的消息就没有ID，消费者就无法去重！
+            if (noticePO.getId() != null) {
+                noticeVO.setId(noticePO.getId());
+            }
         }
         return sendOK;
     }
@@ -86,7 +91,7 @@ public class NoticeHandler {
         if (null == noticePO) {
             return false;
         }
-        if (StringUtils.isEmpty(noticePO.getSenderId())) {
+        if (StringUtils.isEmpty(noticePO. getSenderId())) {
             return false;
         }
         if (StringUtils.isEmpty(noticePO.getReceiverId())) {

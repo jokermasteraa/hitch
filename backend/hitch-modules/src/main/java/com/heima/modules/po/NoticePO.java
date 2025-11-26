@@ -8,6 +8,8 @@ import java.util.Date;
 
 public class NoticePO implements Serializable, PO {
 
+
+    private String id;
     /**
      * 发送人ID
      */
@@ -46,6 +48,13 @@ public class NoticePO implements Serializable, PO {
      */
     private Date createdTime;
 
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
     public String getSenderId() {
         return senderId;
     }
