@@ -10,10 +10,146 @@
     <link rel="stylesheet" href="../css/common.css" />
     <script type="text/javascript" src="../js/qrcode.min.js"></script>
     <script type="text/javascript" src="../js/common.js"></script>
+    <style>
+        .pay-method-container {
+            padding: 20px;
+        }
+        .pay-method-title {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        .pay-method-item {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            margin: 10px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .pay-method-item:hover {
+            border-color: #1677FF;
+            background-color: #f5f9ff;
+        }
+        .pay-method-item.selected {
+            border-color: #1677FF;
+            background-color: #e6f0ff;
+        }
+        .pay-method-item .icon {
+            width: 40px;
+            height: 40px;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            border-radius: 8px;
+        }
+        .pay-method-item.alipay .icon {
+            background-color: #1677FF;
+            color: white;
+        }
+        .pay-method-item.wechat .icon {
+            background-color: #07C160;
+            color: white;
+        }
+        .pay-method-item .info {
+            flex: 1;
+        }
+        .pay-method-item .info .name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+        }
+        .pay-method-item .info .desc {
+            font-size: 12px;
+            color: #999;
+            margin-top: 3px;
+        }
+        .pay-method-item .check {
+            width: 22px;
+            height: 22px;
+            border: 2px solid #ccc;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .pay-method-item.selected .check {
+            border-color: #1677FF;
+            background-color: #1677FF;
+        }
+        .pay-method-item.selected .check::after {
+            content: "✓";
+            color: white;
+            font-size: 14px;
+        }
+        .pay-amount {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #fff8e6;
+            border-radius: 8px;
+        }
+        .pay-amount .label {
+            color: #666;
+            font-size: 14px;
+        }
+        .pay-amount .amount {
+            color: #ff6600;
+            font-size: 28px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        .confirm-pay-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #1677FF, #0056d6);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+        .confirm-pay-btn:hover {
+            background: linear-gradient(135deg, #0056d6, #003d99);
+        }
+        .confirm-pay-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #payQrcodeSection {
+            display: none;
+        }
+        .qrcode-title {
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .qrcode-title.alipay {
+            color: #1677FF;
+        }
+        .qrcode-title.wechat {
+            color: #07C160;
+        }
+        .back-select-btn {
+            display: block;
+            text-align: center;
+            color: #1677FF;
+            margin-top: 15px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+    </style>
     <script>
-
-
-        
+        var selectedChannel = 1; // 默认支付宝
 
         $(function(){
             //本行程详情
@@ -28,32 +164,68 @@
                     d.time = transDate(d.departureTime);
                     d.statusName = tripStatus[d.status];
                     $('#cost').text(getParam('c'));
+                    $('#costDisplay').text(getParam('c'));
                     renderByTemplate('#tripDetail','#template',d); 
                 },
                 error : function(){
                     
                 }
             });
-            //生成支付二维码（微信预支付）
-            $.post('/payment/api/payment',JSON.stringify({orderId:getParam('id')}),function(d){
+
+            // 绑定支付方式选择事件
+            $('.pay-method-item').click(function(){
+                $('.pay-method-item').removeClass('selected');
+                $(this).addClass('selected');
+                selectedChannel = $(this).data('channel');
+            });
+
+            // 默认选中支付宝
+            $('.pay-method-item[data-channel="1"]').addClass('selected');
+        });
+
+        // 确认支付，生成二维码
+        function confirmPayMethod(){
+            var channelName = selectedChannel == 1 ? '支付宝' : '微信';
+            
+            // 隐藏选择界面，显示二维码界面
+            $('#payMethodSection').hide();
+            $('#payQrcodeSection').show();
+            
+            // 设置标题样式
+            $('#qrcodeTitle').text(channelName + '支付');
+            $('#qrcodeTitle').removeClass('alipay wechat');
+            $('#qrcodeTitle').addClass(selectedChannel == 1 ? 'alipay' : 'wechat');
+            
+            // 清空之前的二维码
+            $('#qrcode').html('');
+            
+            // 生成支付二维码
+            $.post('/payment/api/payment',JSON.stringify({orderId:getParam('id'), channel:selectedChannel}),function(d){
                 console.log(d);
                 if(d.code != 200){
                     showMsg(d.message);
-                    if(d.code = -5005){
+                    if(d.code == -5005){
                         //已支付
                         toUrl('order.html',1000);
                     }
                 }else{
-                    var wx = d.data[0].codeUrl;
+                    var payUrl = d.data[0].codeUrl;
                     var qrcode = new QRCode(document.getElementById("qrcode"), {
                         width : 200,
                         height : 200
                     });
-                    qrcode.makeCode(wx);
+                    qrcode.makeCode(payUrl);
                 }
             });
+        }
 
-        })
+        // 返回选择支付方式
+        function backToSelect(){
+            $('#payQrcodeSection').hide();
+            $('#payMethodSection').show();
+            $('#qrcode').html('');
+        }
+
         //查询订单状态，未支付则去远程查询一下，同时同步本地order表
         //manual : 是否手动点击按钮
         function queryOrder(manual){
@@ -83,20 +255,52 @@
 
 <div data-role="page" id="pageone">
     <div data-role="header" data-position="fixed" data-tap-toggle="false">
-        <a href="#" data-rel="back" class="ui-btn ui-btn-inline ui-icon-arrow-l ui-btn-icon-notext ui-corner-all">使用圆圈（默认）</a>
+        <a href="#" data-rel="back" class="ui-btn ui-btn-inline ui-icon-arrow-l ui-btn-icon-notext ui-corner-all">返回</a>
         <h1>乘客端 - 支付</h1>
     </div>
     <div style="margin-top:10px;"></div>
 
-    <div id="content" class="ui-content2" style="padding:20px;line-height: 30px;">
-        <h2 style="color:green;text-align: center;">微信支付</h2>
+    <!-- 支付方式选择界面 -->
+    <div id="payMethodSection" class="pay-method-container">
+        <div class="pay-method-title">请选择支付方式</div>
+        
+        <div class="pay-amount">
+            <div class="label">支付金额</div>
+            <div class="amount">￥<span id="costDisplay"></span></div>
+        </div>
+
+        <div class="pay-method-item alipay" data-channel="1">
+            <div class="icon">支</div>
+            <div class="info">
+                <div class="name">支付宝支付</div>
+                <div class="desc">推荐使用，安全快捷</div>
+            </div>
+            <div class="check"></div>
+        </div>
+
+        <div class="pay-method-item wechat" data-channel="2">
+            <div class="icon">微</div>
+            <div class="info">
+                <div class="name">微信支付</div>
+                <div class="desc">微信扫码支付</div>
+            </div>
+            <div class="check"></div>
+        </div>
+
+        <button class="confirm-pay-btn" onclick="confirmPayMethod()">确认支付</button>
+    </div>
+
+    <!-- 二维码支付界面 -->
+    <div id="payQrcodeSection" class="ui-content2" style="padding:20px;line-height: 30px;">
+        <h2 id="qrcodeTitle" class="qrcode-title alipay">支付宝支付</h2>
         <br>
-        <div id="qrcode" style="padding-left:60px;"></div>
+        <div id="qrcode" style="display:flex;justify-content:center;"></div>
         <h3 id="time" style="color: brown; text-align: center;">支付金额：￥<span id="cost"></span></h3>
         <br>
-        <button onclick="queryOrder(true)">我已支付</button>
-        
+        <button onclick="queryOrder(true)" style="width:100%;padding:12px;border-radius:8px;background:#1677FF;color:white;border:none;font-size:16px;">我已支付</button>
+        <a class="back-select-btn" onclick="backToSelect()">← 重新选择支付方式</a>
     </div>
+
     <div id="tripDetail" class="ui-content2"></div>
 
     <div style="margin-bottom:20px;"></div>

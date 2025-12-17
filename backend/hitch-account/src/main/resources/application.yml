@@ -9,8 +9,6 @@ spring:
         max-wait: 1000
         max-idle: 500
         min-idle: 0
-    password: 123456
-
 baidu:
   apikey: CVtbY659ErA3pagRF3KYwVjt
   secretkey: 0boApgKMdtFMCz0pD2AhCePwKgF2ULHU

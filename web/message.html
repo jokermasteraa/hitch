@@ -39,51 +39,271 @@
     </style>
     <script>
 
-        // websocket.onmessage = function (event) {
-        //     $('#history').append('<p class="msg2">'+event.data+'</p>');
-        //     msg_end.scrollIntoView();
-        // }
+        // 已显示消息的ID集合（用于去重）
+        var displayedMessageIds = new Set();
+        // 本地发送但尚未确认的消息ID集合（防止服务端推送回来时重复显示）
+        var pendingMessageIds = new Set();
 
+        // 生成唯一消息ID
+        function generateMessageId() {
+            return 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
 
+        // 检查消息是否已显示（去重）
+        function isMessageDisplayed(messageId) {
+            if (!messageId) return false;
+            return displayedMessageIds.has(messageId);
+        }
+
+        // 标记消息已显示
+        function markMessageDisplayed(messageId) {
+            if (messageId) {
+                displayedMessageIds.add(messageId);
+            }
+        }
 
         $(function () {
+            // 加载历史消息前，先检查localStorage中已存在的消息ID，避免重复显示
+            var existingMsgIds = new Set();
+            try {
+                var msgStr = localStorage.getItem('_msg');
+                if (msgStr) {
+                    var msg = JSON.parse(msgStr);
+                    msg.forEach(function(m) {
+                        if (m.messageId) {
+                            existingMsgIds.add(m.messageId);
+                            markMessageDisplayed(m.messageId); // 标记为已显示
+                        }
+                    });
+                    console.log('从localStorage加载了' + existingMsgIds.size + '个已存在的消息ID');
+                }
+            } catch (e) {
+                console.log('读取localStorage失败: ' + e);
+            }
+            
             $.post('/notice/api/list',
                 JSON.stringify({
                     'receiverId': getParam('r'), //优先级1
                     'tripId': getParam('t'), //优先级2，如果1没有，按这个查出当前reciver
                 }),
                 function (d) {
-                    d.data.forEach(e => {
-                        if (e.senderId == current_user.id) {
-                            $('#history').append('<p class="msg1">' + e.message + '</p>');
-                        } else {
-                            $('#history').append('<p class="msg2">' + e.message + '</p>');
-                        }
-                    });
+                    if (d && d.data) {
+                        d.data.forEach(function(e) {
+                            // 历史消息去重：检查是否已显示或已在localStorage中
+                            if (e.messageId) {
+                                if (isMessageDisplayed(e.messageId)) {
+                                    console.log('跳过重复历史消息（已显示）: messageId=' + e.messageId);
+                                    return;
+                                }
+                                if (existingMsgIds.has(e.messageId)) {
+                                    console.log('跳过重复历史消息（已在localStorage）: messageId=' + e.messageId);
+                                    markMessageDisplayed(e.messageId);
+                                    return;
+                                }
+                            }
+                            markMessageDisplayed(e.messageId);
+                            
+                            // 将历史消息也存储到localStorage，标记为已显示，避免登录时重复弹窗
+                            if (e.messageId) {
+                                try {
+                                    var msgStr = localStorage.getItem('_msg');
+                                    var msg = [];
+                                    if (msgStr) {
+                                        msg = JSON.parse(msgStr);
+                                    }
+                                    
+                                    // 检查是否已存在
+                                    var exists = msg.some(function(m) {
+                                        return m.messageId === e.messageId;
+                                    });
+                                    
+                                    if (!exists) {
+                                        // 存储历史消息到消息盒子（标记为已显示，不弹窗）
+                                        var simple = {
+                                            senderId: e.senderId,
+                                            senderUseralias: e.senderUseralias,
+                                            message: e.message,
+                                            tripId: e.tripId,
+                                            createdTime: e.createdTime,
+                                            messageId: e.messageId,
+                                            messageSequence: e.messageSequence
+                                        };
+                                        msg.push(simple);
+                                        localStorage.setItem('_msg', JSON.stringify(msg));
+                                        console.log('历史消息已存储到消息盒子: messageId=' + e.messageId);
+                                    }
+                                } catch (err) {
+                                    console.log('存储历史消息失败: ' + err);
+                                }
+                            }
+                            
+                            if (e.senderId && current_user && e.senderId == current_user.id) {
+                                $('#history').append('<p class="msg1">' + e.message + '</p>');
+                            } else {
+                                $('#history').append('<p class="msg2">' + e.message + '</p>');
+                            }
+                        });
+                    }
                     msg_end.scrollIntoView();
                 }
             );
-            //模拟收到消息，正式环境注释掉
-            // setInterval(function () {
-            //     $('#history').append('<p class="msg2">我不在，有事请留言</p>');
-            //     msg_end.scrollIntoView();
-            // }, 1000);
 
             websocket.onmessage = function (event) {
-                var msg = JSON.parse(event.data);
-                $('#history').append('<p class="msg2">'+msg.message+'</p>');
-                msg_end.scrollIntoView();
+                try {
+                    var payload = JSON.parse(event.data);
+
+                    // hitch-notice 新协议：MessagePack
+                    // PUSH_MESSAGE=1006, SERVER_ACK=1003, PONG=1005
+                    if (payload && payload.command) {
+                        if (payload.command == 1006 && payload.data) {
+                            var notice = payload.data;
+                            var messageId = payload.messageId || notice.messageId;
+                            
+                            // 去重检查：如果消息已显示，跳过
+                            if (messageId && isMessageDisplayed(messageId)) {
+                                console.log('跳过重复推送消息: messageId=' + messageId);
+                                // 仍然发送ACK
+                                if (payload.messageId && payload.messageSequence != null) {
+                                    websocket.send(JSON.stringify({
+                                        command: 1002,
+                                        data: {
+                                            messageId: payload.messageId,
+                                            messageSequence: payload.messageSequence
+                                        }
+                                    }));
+                                }
+                                return;
+                            }
+                            
+                            // 检查是否是自己发送的消息（服务端回推）
+                            // 如果是自己发送的消息且已在本地显示，跳过
+                            if (notice.senderId && current_user && notice.senderId == current_user.id) {
+                                if (messageId && pendingMessageIds.has(messageId)) {
+                                    console.log('跳过自己发送的消息回推: messageId=' + messageId);
+                                    pendingMessageIds.delete(messageId);
+                                    markMessageDisplayed(messageId);
+                                    // 仍然发送ACK
+                                    if (payload.messageId && payload.messageSequence != null) {
+                                        websocket.send(JSON.stringify({
+                                            command: 1002,
+                                            data: {
+                                                messageId: payload.messageId,
+                                                messageSequence: payload.messageSequence
+                                            }
+                                        }));
+                                    }
+                                    return;
+                                }
+                            }
+                            
+                            // 标记消息已显示
+                            markMessageDisplayed(messageId);
+                            
+                            // 立即将消息存储到 localStorage，避免 common.js 重复处理
+                            // 这样当用户退出聊天窗口后，common.js 的去重检查会生效
+                            if (messageId) {
+                                try {
+                                    var msgStr = localStorage.getItem('_msg');
+                                    var msg = [];
+                                    if (msgStr) {
+                                        msg = JSON.parse(msgStr);
+                                    }
+                                    
+                                    // 检查是否已存在
+                                    var exists = msg.some(function(m) {
+                                        return m.messageId === messageId;
+                                    });
+                                    
+                                    if (!exists) {
+                                        // 存储到消息盒子（但不显示弹窗，因为已经在聊天窗口显示了）
+                                        var simple = {
+                                            senderId: notice.senderId,
+                                            senderUseralias: notice.senderUseralias,
+                                            message: notice.message,
+                                            tripId: notice.tripId,
+                                            createdTime: notice.createdTime,
+                                            messageId: messageId,
+                                            messageSequence: notice.messageSequence
+                                        };
+                                        msg.push(simple);
+                                        localStorage.setItem('_msg', JSON.stringify(msg));
+                                        console.log('聊天窗口：消息已存储到消息盒子: messageId=' + messageId);
+                                    }
+                                } catch (e) {
+                                    console.log('存储消息到localStorage失败', e);
+                                }
+                            }
+                            
+                            // 显示消息
+                            if (notice.senderId && current_user && notice.senderId == current_user.id) {
+                                $('#history').append('<p class="msg1">' + notice.message + '</p>');
+                            } else {
+                                $('#history').append('<p class="msg2">' + notice.message + '</p>');
+                            }
+                            msg_end.scrollIntoView();
+
+                            // 客户端ACK（1002）：messageId + messageSequence
+                            if (payload.messageId && payload.messageSequence != null) {
+                                websocket.send(JSON.stringify({
+                                    command: 1002,
+                                    data: {
+                                        messageId: payload.messageId,
+                                        messageSequence: payload.messageSequence
+                                    }
+                                }));
+                            }
+                        }
+                        // 其它命令（ACK/PONG等）忽略
+                        return;
+                    }
+
+                    // 兼容旧协议：直接是 NoticeVO/NoticePO
+                    if (payload && payload.message) {
+                        var oldMsgId = payload.messageId;
+                        if (oldMsgId && isMessageDisplayed(oldMsgId)) {
+                            console.log('跳过重复旧协议消息: messageId=' + oldMsgId);
+                            return;
+                        }
+                        markMessageDisplayed(oldMsgId);
+                        $('#history').append('<p class="msg2">' + payload.message + '</p>');
+                        msg_end.scrollIntoView();
+                    }
+                } catch (e) {
+                    console.log('ws message parse failed', e, event.data);
+                }
             }
 
             $('#send').focus().keypress(function (event) {
                 var keynum = (event.keyCode ? event.keyCode : event.which);
                 if (keynum == '13' && $(this).val() != '') {
-                    $('#history').append('<p class="msg1">' + $(this).val() + '</p>');
+                    var txt = $(this).val();
+                    
+                    // 生成前端消息ID（用于去重）
+                    var clientMessageId = generateMessageId();
+                    
+                    // 立即显示发送的消息
+                    $('#history').append('<p class="msg1">' + txt + '</p>');
+                    
+                    // 标记为待确认（防止服务端推送回来时重复显示）
+                    pendingMessageIds.add(clientMessageId);
+                    // 同时标记为已显示
+                    markMessageDisplayed(clientMessageId);
+
+                    var receiverId = getParam('r'); //优先级1
+                    var tripId = getParam('t'); //优先级2
+
+                    // hitch-notice 协议：发送 MessagePack(command=1001)
+                    // 携带前端生成的messageId，用于幂等性和去重
                     websocket.send(JSON.stringify({
-                        'receiverId': getParam('r'), //优先级1
-                        'tripId': getParam('t'), //优先级2，如果1没有，按这个查出当前reciver
-                        'message': $(this).val()
-                    })); //websocket发送消息
+                        command: 1001,
+                        messageId: clientMessageId,
+                        toId: receiverId,
+                        data: {
+                            receiverId: receiverId,
+                            tripId: tripId,
+                            message: txt
+                        }
+                    }));
                     $(this).val('');
                     //消息滚动到底部
                     msg_end.scrollIntoView();

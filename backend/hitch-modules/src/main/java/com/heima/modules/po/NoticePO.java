@@ -8,8 +8,6 @@ import java.util.Date;
 
 public class NoticePO implements Serializable, PO {
 
-
-    private String id;
     /**
      * 发送人ID
      */
@@ -40,6 +38,15 @@ public class NoticePO implements Serializable, PO {
      */
     private boolean read = false;
 
+    /**
+     * 消息ID（用于幂等性）
+     */
+    private String messageId;
+
+    /**
+     * 消息序列号（用于有序性）
+     */
+    private Long messageSequence;
 
     private String message;
 
@@ -48,13 +55,6 @@ public class NoticePO implements Serializable, PO {
      */
     private Date createdTime;
 
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
     public String getSenderId() {
         return senderId;
     }
@@ -117,6 +117,22 @@ public class NoticePO implements Serializable, PO {
 
     public void setCreatedTime(Date createdTime) {
         this.createdTime = createdTime;
+    }
+
+    public String getMessageId() {
+        return messageId;
+    }
+
+    public void setMessageId(String messageId) {
+        this.messageId = messageId;
+    }
+
+    public Long getMessageSequence() {
+        return messageSequence;
+    }
+
+    public void setMessageSequence(Long messageSequence) {
+        this.messageSequence = messageSequence;
     }
 
     @Override

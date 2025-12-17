@@ -11,7 +11,6 @@
       <module fileurl="file://$PROJECT_DIR$/backend/hitch-order/hitch-order.iml" filepath="$PROJECT_DIR$/backend/hitch-order/hitch-order.iml" />
       <module fileurl="file://$PROJECT_DIR$/backend/hitch-payment/hitch-payment.iml" filepath="$PROJECT_DIR$/backend/hitch-payment/hitch-payment.iml" />
       <module fileurl="file://$PROJECT_DIR$/backend/hitch-storage/hitch-storage.iml" filepath="$PROJECT_DIR$/backend/hitch-storage/hitch-storage.iml" />
-      <module fileurl="file://$PROJECT_DIR$/backend/hitch-stroke/hitch-stroke.iml" filepath="$PROJECT_DIR$/backend/hitch-stroke/hitch-stroke.iml" />
     </modules>
   </component>
 </project>

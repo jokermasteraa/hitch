@@ -1,0 +1,41 @@
+
+server:
+  port: 8007
+
+# 通知服务配置
+notice:
+  broker-id: 1001
+
+spring:
+  redis:
+    host: @redis.host@
+    port: @redis.port@
+    jedis:
+      pool:
+        max-active: 8
+        max-wait: 1000
+        max-idle: 500
+        min-idle: 0
+    lettuce:
+      shutdown-timeout: 0
+  data:
+    mongodb:
+      host: @mongo.host@
+      port: @mongo.port@
+      database: notice
+      # MongoDB连接URI（包含超时配置）
+      uri: mongodb://@mongo.host@:@mongo.port@/notice?socketTimeoutMS=60000&connectTimeoutMS=30000&serverSelectionTimeoutMS=30000
+  rabbitmq:
+    host: @rabbit.host@
+    port: @rabbit.port@
+    username: guest
+    password: guest
+    virtual-host: /
+    publisher-confirms: true
+    publisher-returns: true
+    template:
+      mandatory: true
+
+logging:
+  pattern:
+    console: "[NODE2] %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

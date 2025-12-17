@@ -1,5 +1,7 @@
 package com.heima.payment.configuration;
 
+import com.alipay.api.AlipayClient;
+import com.alipay.api.DefaultAlipayClient;
 import com.github.wxpay.sdk.IWXPayDomain;
 import com.github.wxpay.sdk.WXPay;
 import com.github.wxpay.sdk.WXPayConfig;
@@ -13,13 +15,30 @@ import java.io.InputStream;
  * 支付配置类
  */
 @Configuration
-@EnableConfigurationProperties(WXProperties.class)
+@EnableConfigurationProperties({WXProperties.class, AlipayPeoperties.class})
 public class PaymentConfiguration {
     //声明微信支付sdk
     @Bean
     public WXPay wxPay(WXProperties properties) throws Exception {
         WXPayConfig wxPayConfig = getWXPayConfig(properties);
         return new WXPay(wxPayConfig, wxPayConfig.getNotifyUrl());
+    }
+
+    /**
+     * 支付宝客户端（沙箱/正式环境通过配置切换）
+     */
+    @Bean
+    public AlipayClient alipayClient(AlipayPeoperties properties) {
+        // format 固定为 json
+        return new DefaultAlipayClient(
+                properties.getGatewayUrl(),
+                properties.getAppId(),
+                properties.getMerchantPrivateKey(),
+                "json",
+                properties.getCharset(),
+                properties.getAlipayPublicKey(),
+                properties.getSignType()
+        );
     }
 
     /**

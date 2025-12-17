@@ -105,7 +105,12 @@
             <if test="cost!=null and driverStrokeId!=''">
                 and cost = #{cost,jdbcType=FLOAT}
             </if>
-            and status >= #{status,jdbcType=INTEGER}
+            <if test="status != null">
+                and status >= #{status,jdbcType=INTEGER}
+            </if>
+            <if test="status == null">
+                and status >= 0
+            </if>
         </where>
         ORDER BY id DESC
     </select>

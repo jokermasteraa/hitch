@@ -47,7 +47,7 @@ public class PaymentVO implements VO {
     /**
      * 支付渠道 支付宝：1微信：2
      */
-    @InitialResolver(resolver = InitialResolverType.DEF_VALUE, groups = {Group.Create.class}, def = "2")
+    @InitialResolver(resolver = InitialResolverType.DEF_VALUE, groups = {Group.Create.class}, def = "1")
     private Integer channel;
 
     /**

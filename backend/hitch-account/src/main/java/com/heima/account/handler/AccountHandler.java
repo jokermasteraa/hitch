@@ -23,6 +23,7 @@ import com.heima.modules.vo.AuthenticationVO;
 import com.heima.modules.vo.VehicleVO;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -47,6 +48,10 @@ public class AccountHandler {
 
     @Autowired
     private BaiduAIHelper baiduAIHelper;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
+
 
 
     /**
@@ -127,6 +132,7 @@ public class AccountHandler {
         AccountVO vo = verifyAccountLogin(accountVO);
         SessionContext sessionContext = redisSessionHelper.createSession(vo, vo.getId(), vo.getUsername(), vo.getUseralias(), null);
         vo.setToken(sessionContext.getSessionID());
+
         return ResponseVO.success(vo);
     }
 
@@ -346,6 +352,6 @@ public class AccountHandler {
         }
 
         return ResponseVO.success(accountPO);
-
+    }
 
 }

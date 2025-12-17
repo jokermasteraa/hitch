@@ -6,12 +6,8 @@ import com.heima.commons.groups.Group;
 import com.heima.commons.initial.annotation.InitialResolver;
 import com.heima.modules.po.NoticePO;
 
-import java.time.LocalDateTime;
-
 public class NoticeVO implements VO {
 
-
-    private String id;
     /**
      * 发送人ID
      */
@@ -44,26 +40,6 @@ public class NoticeVO implements VO {
 
 
     private String message;
-
-    private Long sendTime;
-
-    public void setSendTime(Long sendTime){
-        this.sendTime = sendTime;
-    }
-
-    public Long getSendTime() {
-        return sendTime;
-    }
-
-
-
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
 
     public String getSenderId() {
         return senderId;

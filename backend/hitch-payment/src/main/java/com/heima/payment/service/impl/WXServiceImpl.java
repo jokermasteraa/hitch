@@ -18,7 +18,7 @@ import java.util.Map;
 /**
  * 微信支付工具类型
  */
-@Service
+@Service("wxPayService")
 public class WXServiceImpl implements PayService {
 
     @Autowired

@@ -66,17 +66,39 @@ public class OrderHandler {
         //乘客
         if (orderVO.getRole() == 0) {
             orderPO.setPassengerId(orderVO.getCurrentUserId());
-            orderPO.setStatus(1);
             //司机
         } else if (orderVO.getRole() == 1) {
             orderPO.setDriverId(orderVO.getCurrentUserId());
+        }
+        // 订单列表只显示状态 >= 1 的订单（未支付和已支付），不显示临时订单（状态0）
+        // 如果前端没有传入status，默认查询状态 >= 1 的订单
+        if (orderPO.getStatus() == null) {
             orderPO.setStatus(1);
         }
         List<OrderPO> orderPOList = orderAPIService.selectAvailableList(orderPO);
+        org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(OrderHandler.class);
+        logger.info("查询订单列表: role={}, passengerId={}, driverId={}, status={}, 查询到{}条订单", 
+                orderVO.getRole(), orderPO.getPassengerId(), orderPO.getDriverId(), 
+                orderPO.getStatus(), orderPOList.size());
+        
         List<OrderVO> orderVOList = new ArrayList<>();
         for (OrderPO order : orderPOList) {
-            orderVOList.add(renderOrder(order));
+            try {
+                OrderVO renderedOrderVO = renderOrder(order);
+                orderVOList.add(renderedOrderVO);
+                logger.debug("订单渲染成功: orderId={}, status={}", order.getId(), order.getStatus());
+            } catch (BusinessRuntimeException e) {
+                // 如果是数据不存在类错误（如乘客/司机/行程不存在），说明这条订单数据已脏，直接跳过避免影响整个列表
+                if (e.getBusinessError() == BusinessErrors.DATA_NOT_EXIST) {
+                    logger.warn("订单渲染失败，跳过订单: orderId={}, error={}", order.getId(), e.getMessage());
+                    continue;
+                }
+                // 其它业务错误仍然抛出
+                logger.error("订单渲染失败: orderId={}, error={}", order.getId(), e.getMessage(), e);
+                throw e;
+            }
         }
+        logger.info("订单列表渲染完成: 原始{}条，成功{}条", orderPOList.size(), orderVOList.size());
         return ResponseVO.success(orderVOList);
     }
 
@@ -150,7 +172,7 @@ public class OrderHandler {
         orderVO.setDriverPhone(driverAccount.getPhone());
         //司机行程封装
         StrokePO driverStroke = strokeAPIService.selectByID(orderPO.getDriverStrokeId());
-        if (null == driverAccount) {
+        if (null == driverStroke) {
             throw new BusinessRuntimeException(BusinessErrors.DATA_NOT_EXIST, "司机行程不存在");
         }
         orderVO.setDriverStartDate(driverStroke.getDepartureTime());

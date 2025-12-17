@@ -25,19 +25,26 @@
             cache: false,
             data: JSON.stringify({ role: localStorage.getItem('current_role') }),
             success: function (d) {
-                for (var i in d.data) {
-                    var dd = d.data[i];
-                    dd.statusName = orderStatus[dd.status];
-                    dd.statusColor = getStatusColor(dd.status);
-                    dd.time = transDate(dd.passengerStartDate);
-                    renderByTemplate('#defaultpanel', '#template', dd);
-                    if (dd.status != 1) { //已支付，去掉支付连接
-                        $('#defaultpanel p:last').remove();
+                console.log('订单列表响应:', d);
+                if (d && d.data && d.data.length > 0) {
+                    console.log('订单数量:', d.data.length);
+                    for (var i in d.data) {
+                        var dd = d.data[i];
+                        console.log('处理订单:', dd.id, '状态:', dd.status);
+                        dd.statusName = orderStatus[dd.status];
+                        dd.statusColor = getStatusColor(dd.status);
+                        dd.time = transDate(dd.passengerStartDate);
+                        renderByTemplate('#defaultpanel', '#template', dd);
+                        if (dd.status != 1) { //已支付，去掉支付链接
+                            $('#defaultpanel p:last').remove();
+                        }
                     }
+                } else {
+                    console.log('没有订单数据');
                 }
             },
-            error: function () {
-
+            error: function (xhr, status, error) {
+                console.error('获取订单列表失败:', status, error, xhr.responseText);
             }
         });
 

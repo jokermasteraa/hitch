@@ -22,4 +22,6 @@ public class MapperTest {
         AccountPO tmp = accountMapper.checkLogin(accountPO);
         System.out.println(tmp);
     }
+
+
 }

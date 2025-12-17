@@ -49,10 +49,10 @@ spring:
           predicates:
             - Path=/ws/**
       default-filters:
-        - TokenAuth=/account/api/login;/account/api/register;/payment/api/nofify
+        - TokenAuth=/account/api/login;/account/api/register;/payment/api/nofify;/payment/api/alipayNotify
 
   redis:
     host: @redis.host@
     port: @redis.port@
     timeout: 1000
-    password: 123456
+#    password: 123456

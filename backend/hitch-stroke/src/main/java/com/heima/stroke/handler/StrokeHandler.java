@@ -74,21 +74,21 @@ public class StrokeHandler {
         //入mysql库
         StrokePO tmp = strokeAPIService.publish(strokePO);
         Collection<HitchGeoBO> collection = initGeoData(tmp);
-        for (HitchGeoBO hitchGeoBO : collection) {
-            WorldMapBO worldMapBO = new WorldMapBO(hitchGeoBO.getStartGeo(), hitchGeoBO.getTargetId());
-            sendStartGeo(worldMapBO);
-        }
+//        for (HitchGeoBO hitchGeoBO : collection) {
+//            WorldMapBO worldMapBO = new WorldMapBO(hitchGeoBO.getStartGeo(), hitchGeoBO.getTargetId());
+//            sendStartGeo(worldMapBO);
+//        }
         return ResponseVO.success(tmp);
     }
-
-    /**
-     * 起始行程GEO发送
-     *
-     * @param worldMapBO
-     */
-    public void sendStartGeo(WorldMapBO worldMapBO) {
-        kafkaTemplate.send(HtichConstants.STROKE_START_GEO, JSON.toJSONString(worldMapBO));
-    }
+//
+//    /**
+//     * 起始行程GEO发送
+//     *
+//     * @param worldMapBO
+//     */
+//    public void sendStartGeo(WorldMapBO worldMapBO) {
+//        kafkaTemplate.send(HtichConstants.STROKE_START_GEO, JSON.toJSONString(worldMapBO));
+//    }
 
 
     /**
@@ -213,7 +213,8 @@ public class StrokeHandler {
         if (null == orderPO) {
             throw new BusinessRuntimeException(BusinessErrors.DATA_NOT_EXIST, "订单数据不存在");
         }
-        //下车车状态判断订单状态由 0->1
+        //下车后订单状态由 0（临时订单）-> 1（未支付）
+        // 注意：这里传入的是订单ID，不是行程ID
         orderStatusChange(orderPO.getId(), 0, 1);
         return ResponseVO.success(strokePO);
     }
@@ -288,50 +289,144 @@ public class StrokeHandler {
 
 
     /**
-     * 接受以及拒绝邀请
-     *
-     * @param strokeVO
-     * @return
+     * 接受邀请 (整合了 Lua 防超卖 + 异常回滚补偿)
      */
+    @Transactional // 保证 MySQL 操作的原子性
     public ResponseVO<StrokeVO> inviteAccept(StrokeVO strokeVO) {
-        isFullStarffed(strokeVO);
-        //获取司机行程ID
-        String inviterTripId = strokeVO.getInviterTripId();
-        //判断司机是否已经发车
-        boolean isDepart = redisHelper.exists(HtichConstants.STROKE_INVITE_PREFIX, inviterTripId);
-        if (!isDepart) {
-            throw new BusinessRuntimeException(BusinessErrors.STOCK_ALREADY_DEPART);
-        }
-        //获取乘客行程ID
-        String inviteeTripId = strokeVO.getInviteeTripId();
-        //司机行程对象
-        StrokePO inviter = strokeAPIService.selectByID(inviterTripId);
-        //乘客行程对象
-        StrokePO invitee = strokeAPIService.selectByID(inviteeTripId);
-        //创建邀请状态
+        // 1. 获取基本参数
+        String inviterTripId = strokeVO.getInviterTripId(); // 司机行程ID
+        String inviteeTripId = strokeVO.getInviteeTripId(); // 乘客行程ID
         int status = strokeVO.getStatus();
+
+        // 校验状态枚举
         InviteState state = InviteState.getState(status);
         if (null == state) {
             throw new BusinessRuntimeException(BusinessErrors.DATA_STATUS_ERROR);
         }
 
-        // 修改邀请状态
-        // 0 = 未确认， 1 = 已确认 ， 2= 已拒绝
-        redisHelper.addHash(HtichConstants.STROKE_INVITE_PREFIX, inviteeTripId, inviterTripId, String.valueOf(state.getCode()));
-        redisHelper.addHash(HtichConstants.STROKE_INVITE_PREFIX, inviterTripId, inviteeTripId, String.valueOf(state.getCode()));
-
-        //确认同行
-        if (state == InviteState.CONFIRMED) {
-            //行程ID更新，由 0 -> 1
-            travelStatusChange(inviteeTripId, 0, 1);
-            addOrder(inviter, invitee);
-
-            //清理相关缓存，重要！
-            strokeVO.setRole(0);
-            unbindStroke(strokeVO);
+        // 2. 基础校验：司机是否已发车
+        boolean isDepart = redisHelper.exists(HtichConstants.STROKE_INVITE_PREFIX, inviterTripId);
+        if (!isDepart) {
+            throw new BusinessRuntimeException(BusinessErrors.STOCK_ALREADY_DEPART);
         }
+
+        // 3. 准备数据对象
+        StrokePO inviter = strokeAPIService.selectByID(inviterTripId);
+        StrokePO invitee = strokeAPIService.selectByID(inviteeTripId);
+        if (inviter == null || invitee == null) {
+            throw new BusinessRuntimeException(BusinessErrors.DATA_NOT_EXIST);
+        }
+
+        // ================= 核心逻辑开始 =================
+
+        // 分支 A: 如果是“确认同行” (CONFIRMED) —— 需要抢座
+        if (state == InviteState.CONFIRMED) {
+
+            // 3.1 [Redis] 执行 Lua 脚本原子占座
+            // 如果返回 true，说明座位已扣减，状态已变为 CONFIRMED
+            boolean success = redisHelper.inviteAcceptAtomically(
+                    HtichConstants.STROKE_INVITE_PREFIX,
+                    inviterTripId,
+                    inviteeTripId,
+                    inviter.getQuantity(), // 车辆最大座位数
+                    String.valueOf(state.getCode())
+            );
+
+            // 占座失败（满员）
+            if (!success) {
+                throw new BusinessRuntimeException(BusinessErrors.STOCK_FULL_STARFFED);
+            }
+
+            // 3.2 [MySQL] 尝试下单和更新状态
+            // 必须用 try-catch 包裹，一旦 MySQL 失败，必须把 Redis 状态改回去
+            try {
+                // 行程状态变更 (写 MySQL)
+                travelStatusChange(inviteeTripId, 0, 1);
+
+                // 创建订单 (写 MySQL)
+                // 注意：如果 addOrder 内部抛出异常，或者 travelStatusChange 抛出异常，都会进入 catch
+                addOrder(inviter, invitee);
+
+                // 3.3 [清理] 只有下单成功才做非关键的清理 (Redis 删除操作，通常无需回滚)
+                strokeVO.setRole(0);
+                unbindStroke(strokeVO);
+
+            } catch (Exception e) {
+                // !!! 关键点：补偿回滚 !!!
+                // MySQL 失败了，Redis 里的状态还是 CONFIRMED（已占用座位），必须改回 UNCONFIRMED
+
+                try {
+                    redisHelper.inviteRollback(
+                            HtichConstants.STROKE_INVITE_PREFIX,
+                            inviterTripId,
+                            inviteeTripId,
+                            String.valueOf(InviteState.UNCONFIRMED.getCode()) // 改回 "0"
+                    );
+                } catch (Exception ex) {
+                    // 如果连回滚都失败了（极罕见，如 Redis 突然挂了），
+                    // 此时需要记录严重日志，后续可能需要人工或定时任务介入修复
+                    // log.error("严重故障：回滚座位失败", ex);
+                }
+
+                // 重新抛出异常，触发 @Transactional 回滚 MySQL 刚才可能已执行的一半操作
+                throw e;
+            }
+
+        } else {
+            // 分支 B: 如果是“拒绝”或其他状态 —— 不需要抢座，直接更新 Redis 即可
+            // 即使失败也就是状态没更新，不涉及“库存”问题，风险较小
+            redisHelper.addHash(HtichConstants.STROKE_INVITE_PREFIX, inviteeTripId, inviterTripId, String.valueOf(state.getCode()));
+            redisHelper.addHash(HtichConstants.STROKE_INVITE_PREFIX, inviterTripId, inviteeTripId, String.valueOf(state.getCode()));
+        }
+
         return ResponseVO.success(null);
     }
+
+//    /**
+//     * 接受以及拒绝邀请
+//     *
+//     * @param strokeVO
+//     * @return
+//     */
+//    public ResponseVO<StrokeVO> inviteAccept(StrokeVO strokeVO) {
+//        isFullStarffed(strokeVO);
+//        //获取司机行程ID
+//        String inviterTripId = strokeVO.getInviterTripId();
+//        //判断司机是否已经发车
+//        boolean isDepart = redisHelper.exists(HtichConstants.STROKE_INVITE_PREFIX, inviterTripId);
+//        if (!isDepart) {
+//            throw new BusinessRuntimeException(BusinessErrors.STOCK_ALREADY_DEPART);
+//        }
+//        //获取乘客行程ID
+//        String inviteeTripId = strokeVO.getInviteeTripId();
+//        //司机行程对象
+//        StrokePO inviter = strokeAPIService.selectByID(inviterTripId);
+//        //乘客行程对象
+//        StrokePO invitee = strokeAPIService.selectByID(inviteeTripId);
+//        //创建邀请状态
+//        int status = strokeVO.getStatus();
+//        InviteState state = InviteState.getState(status);
+//        if (null == state) {
+//            throw new BusinessRuntimeException(BusinessErrors.DATA_STATUS_ERROR);
+//        }
+//
+//        // 修改邀请状态
+//        // 0 = 未确认， 1 = 已确认 ， 2= 已拒绝
+//        redisHelper.addHash(HtichConstants.STROKE_INVITE_PREFIX, inviteeTripId, inviterTripId, String.valueOf(state.getCode()));
+//        redisHelper.addHash(HtichConstants.STROKE_INVITE_PREFIX, inviterTripId, inviteeTripId, String.valueOf(state.getCode()));
+//
+//        //确认同行
+//        if (state == InviteState.CONFIRMED) {
+//            //行程ID更新，由 0 -> 1
+//            travelStatusChange(inviteeTripId, 0, 1);
+//            addOrder(inviter, invitee);
+//
+//            //清理相关缓存，重要！
+//            strokeVO.setRole(0);
+//            unbindStroke(strokeVO);
+//        }
+//        return ResponseVO.success(null);
+//    }
 
     /**
      * 确认送达

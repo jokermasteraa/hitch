@@ -10,9 +10,9 @@ import java.util.List;
 import java.util.Map;
 
 public class BaiduMapClient {
-    private static final String API_URL = "https://api.map.baidu.com/routematrix/v2/driving";
+    private static final String API_URL = "https://api.map.baidu.com/routematrix/v2/driving?";
     /*@Value(("${baidu.map.ak}"))*/
-    private static final String ak = "EoHbxdtKC097db8DVk1Qq1LVe1Ip2Yx4";
+    private static final String ak = "kaCVK0442ptH5VunlE1ogs5WSh5ART6M";
 
 
     public static List<RoutePlanResultBO> pathPlanning(String origins, String destinations) {

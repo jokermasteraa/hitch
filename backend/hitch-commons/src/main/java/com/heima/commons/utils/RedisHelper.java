@@ -5,17 +5,73 @@ import com.heima.commons.constant.HtichConstants;
 import com.heima.commons.domin.bo.GeoBO;
 import com.heima.commons.domin.bo.ZsetResultBO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.geo.*;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scripting.support.ResourceScriptSource;
 
 import java.util.*;
 
 public class RedisHelper {
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
+
+    // --- 定义静态脚本对象，预加载脚本 ---
+    private static DefaultRedisScript<Long> ACCEPT_SCRIPT;
+    private static DefaultRedisScript<Long> ROLLBACK_SCRIPT;
+
+    static {
+        // 加载抢座脚本
+        ACCEPT_SCRIPT = new DefaultRedisScript<>();
+        ACCEPT_SCRIPT.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/invite_accept.lua")));
+        ACCEPT_SCRIPT.setResultType(Long.class);
+
+        // 加载回滚脚本
+        ROLLBACK_SCRIPT = new DefaultRedisScript<>();
+        ROLLBACK_SCRIPT.setScriptSource(new ResourceScriptSource(new ClassPathResource("scripts/invite_rollback.lua")));
+        ROLLBACK_SCRIPT.setResultType(Long.class);
+    }
+
+    /**
+     * 原子操作：尝试占座
+     */
+    public boolean inviteAcceptAtomically(String prefix, String driverTripId, String passengerTripId, int maxSeats, String confirmedStatus) {
+        List<String> keys = new ArrayList<>();
+        keys.add(getRedisKey(prefix, driverTripId));    // KEYS[1]
+        keys.add(getRedisKey(prefix, passengerTripId)); // KEYS[2]
+
+        Long result = redisTemplate.execute(ACCEPT_SCRIPT, keys,
+                passengerTripId,          // ARGV[1]
+                driverTripId,             // ARGV[2]
+                String.valueOf(maxSeats), // ARGV[3]
+                confirmedStatus           // ARGV[4]
+        );
+        return result != null && result == 1;
+    }
+
+    /**
+     * 补偿操作：回滚占座 (释放座位)
+     */
+    public void inviteRollback(String prefix, String driverTripId, String passengerTripId, String targetStatus) {
+        List<String> keys = new ArrayList<>();
+        keys.add(getRedisKey(prefix, driverTripId));
+        keys.add(getRedisKey(prefix, passengerTripId));
+
+        redisTemplate.execute(ROLLBACK_SCRIPT, keys,
+                passengerTripId,
+                driverTripId,
+                targetStatus
+        );
+    }
+
+    // ... 其他原有方法 (getRedisKey, addHash 等) ...
+    private String getRedisKey(String prefix, String key) {
+        return prefix + key;
+    }
 
     public void setObject(String prefix, String key, Object value) {
         String redisKey = getRedisKey(prefix, key);
@@ -159,10 +215,6 @@ public class RedisHelper {
     public void delZsetByKey(String prefix, String key, String value) {
         String redisKey = getRedisKey(prefix, key);
         redisTemplate.opsForZSet().remove(redisKey, value);
-    }
-
-    private String getRedisKey(String prefix, String key) {
-        return prefix + key;
     }
 
 

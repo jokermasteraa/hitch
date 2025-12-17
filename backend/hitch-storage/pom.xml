@@ -12,7 +12,7 @@
 
     <properties>
         <!--启动服务端口号-->
-        <project.server.prot>8003</project.server.prot>
+        <project.server.prot>9005</project.server.prot>
         <!--启动服务名称-->
         <project.server.name>${artifactId}-server</project.server.name>
         <!--访问统一前缀-->
@@ -75,7 +75,7 @@
         <dependency>
             <groupId>com.github.tobato</groupId>
             <artifactId>fastdfs-client</artifactId>
-            <version>1.26.4</version>
+            <version>1.27.2</version>
         </dependency>
 
 

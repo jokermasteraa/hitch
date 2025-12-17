@@ -43,7 +43,7 @@ public class APIController {
     @ApiOperation(value = "发送起始坐标", tags = {"行程管理"})
     @PostMapping("/sendStartGeo")
     public ResponseVO<StrokeVO> sendStartGeo(@RequestBody WorldMapBO worldMapBO) {
-        strokeHandler.sendStartGeo(worldMapBO);
+//        strokeHandler.sendStartGeo(worldMapBO);
         return ResponseVO.success(null);
     }
 

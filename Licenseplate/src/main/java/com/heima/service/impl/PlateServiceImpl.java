@@ -7,6 +7,7 @@ import com.heima.util.FileUtil;
 import com.heima.util.PlateUtil;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -17,11 +18,17 @@ import java.util.Vector;
 
 
 @Service
+@ConditionalOnClass(name = "org.opencv.core.Core")
 public class PlateServiceImpl implements PlateService {
 
 
     static {
-        System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+        try {
+            System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+        } catch (UnsatisfiedLinkError e) {
+            // 记录日志但不中断应用启动
+            System.err.println("OpenCV library not loaded: " + e.getMessage());
+        }
     }
 
     @Override

@@ -170,24 +170,105 @@ function getUser() {
                         alert('Not support websocket')
                     }
                     websocket.onmessage = function (event) {
-                        showMsg('您有新消息，请注意查看！');
-                        var d = JSON.parse(event.data);
-                        console.log(d);
-                        var msgStr = localStorage.getItem('_msg');
-                        var msg = [];
-                        if (msgStr) {
-                            msg = JSON.parse(msgStr) ;
+                        try {
+                            var payload = JSON.parse(event.data);
+                            console.log(payload);
+
+                            // hitch-notice 新协议：MessagePack(command=1006, data=NoticePO)
+                            var notice = null;
+                            if (payload && payload.command && payload.command == 1006 && payload.data) {
+                                notice = payload.data;
+                            } else if (payload && payload.message) {
+                                // 兼容旧协议：NoticeVO/NoticePO
+                                notice = payload;
+                            } else {
+                                // ACK/PONG等无需入本地消息盒子
+                                return;
+                            }
+
+                            // 获取消息ID用于去重
+                            var messageId = payload.messageId || notice.messageId;
+
+                            // 检查当前是否在聊天窗口页面，如果是则不处理（避免重复）
+                            var currentUrl = window.location.href;
+                            var isInChatPage = currentUrl.indexOf('message.html') !== -1;
+                            if (isInChatPage) {
+                                console.log('当前在聊天窗口，跳过 common.js 的消息处理，避免重复');
+                                return;
+                            }
+
+                            var msgStr = localStorage.getItem('_msg');
+                            var msg = [];
+                            if (msgStr) {
+                                msg = JSON.parse(msgStr);
+                            }
+
+                            // 去重检查：如果消息已存在，跳过（不存储也不弹窗）
+                            var isExistingMessage = false;
+                            if (messageId) {
+                                var exists = msg.some(function(m) {
+                                    return m.messageId === messageId;
+                                });
+                                if (exists) {
+                                    console.log('消息盒子跳过重复消息（已存在）: messageId=' + messageId);
+                                    return; // 消息已存在，直接返回，不存储也不弹窗
+                                }
+                            }
+                            
+                            // 检查消息时间：如果是很久以前的消息（超过1分钟），可能是离线消息推送，不弹窗
+                            var isOldMessage = false;
+                            if (notice.createdTime) {
+                                try {
+                                    var messageTime = new Date(notice.createdTime).getTime();
+                                    var now = Date.now();
+                                    var timeDiff = now - messageTime;
+                                    // 如果消息超过1分钟，认为是旧消息（离线消息推送），不弹窗
+                                    if (timeDiff > 60 * 1000) {
+                                        isOldMessage = true;
+                                        console.log('消息是旧消息（离线推送），不弹窗: messageId=' + messageId + ', timeDiff=' + Math.round(timeDiff/1000) + '秒');
+                                    }
+                                } catch (e) {
+                                    console.log('解析消息时间失败: ' + e);
+                                }
+                            }
+                            
+                            // 额外检查：如果消息内容已经在localStorage中（通过内容匹配），也不弹窗
+                            // 这可以处理消息ID不一致但内容相同的情况
+                            var isDuplicateContent = false;
+                            if (notice.message) {
+                                var duplicateContent = msg.some(function(m) {
+                                    return m.message === notice.message && 
+                                           m.senderId === notice.senderId &&
+                                           m.tripId === notice.tripId;
+                                });
+                                if (duplicateContent) {
+                                    isDuplicateContent = true;
+                                    console.log('消息内容重复（已存在），不弹窗: messageId=' + messageId + ', message=' + notice.message.substring(0, 20));
+                                }
+                            }
+
+                            // 只保留前端"消息盒子"需要的字段，避免localStorage膨胀
+                            var simple = {
+                                senderId: notice.senderId,
+                                senderUseralias: notice.senderUseralias,
+                                message: notice.message,
+                                tripId: notice.tripId,
+                                createdTime: notice.createdTime,
+                                messageId: messageId || notice.messageId,
+                                messageSequence: notice.messageSequence
+                            };
+                            msg.push(simple);
+                            localStorage.setItem('_msg', JSON.stringify(msg));
+                            
+                            // 只有新消息、不是旧消息、且内容不重复才提示（避免登录时推送离线消息弹窗）
+                            if (!isOldMessage && !isDuplicateContent) {
+                                showMsg('您有新消息，请注意查看！');
+                            } else {
+                                console.log('跳过消息弹窗: messageId=' + messageId + ', isOldMessage=' + isOldMessage + ', isDuplicateContent=' + isDuplicateContent);
+                            }
+                        } catch (e) {
+                            console.log('ws payload parse failed', e, event.data);
                         }
-                        // 压缩消息，去掉没用的属性
-                        delete(d['read']);
-                        delete(d['receiverUseralias']);
-                        delete(d['receiverId']);
-                        delete(d['retripIdad']);
-                        delete(d['vO']);
-                        delete(d['tripId']);
-                        delete(d['createdTime']);
-                        msg.push(d);
-                        localStorage.setItem('_msg', JSON.stringify(msg));
                     }
 
                 } else {

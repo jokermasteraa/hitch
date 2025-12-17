@@ -1,6 +1,6 @@
 package com.heima.storage.handler;
 
-import com.github.tobato.fastdfs.domain.StorePath;
+import com.github.tobato.fastdfs.domain.fdfs.StorePath;
 import com.github.tobato.fastdfs.service.FastFileStorageClient;
 import com.heima.commons.domin.vo.response.ResponseVO;
 import com.heima.commons.enums.BusinessErrors;
@@ -27,6 +27,7 @@ public class AttachmentHandler {
 
     @Autowired
     private FastFileStorageClient storageClient;
+
 
     public ResponseVO<AttachmentPO> uploadFile(MultipartFile file) throws Exception {
         //校验文件是否为空
@@ -61,14 +62,18 @@ public class AttachmentHandler {
     /**
      * 上传文件
      */
-    private String dfsUploadFile(MultipartFile multipartFile) throws Exception {
-        String originalFilename = multipartFile.getOriginalFilename().
-                substring(multipartFile.getOriginalFilename().
-                        lastIndexOf(".") + 1);
-        StorePath storePath = this.storageClient.uploadImageAndCrtThumbImage(
+    private String dfsUploadFile(MultipartFile multipartFile) throws IOException {
+        String ext = StringUtils.getFilenameExtension(multipartFile.getOriginalFilename());
+        if (StringUtils.isEmpty(ext)) {
+            ext = "png"; // 或根据内容类型判断，或抛异常
+        }
+        StorePath storePath = storageClient.uploadImageAndCrtThumbImage(
                 multipartFile.getInputStream(),
-                multipartFile.getSize(), originalFilename, null);
-        return storePath.getFullPath();
+                multipartFile.getSize(),
+                ext,
+                null
+        );
+        return "http://47.109.192.91/" + storePath.getFullPath();
     }
 
     /**
@@ -80,7 +85,7 @@ public class AttachmentHandler {
             return;
         }
         try {
-            StorePath storePath = StorePath.praseFromUrl(fileUrl);
+            StorePath storePath = StorePath.parseFromUrl(fileUrl);
             storageClient.deleteFile(storePath.getGroup(), storePath.getPath());
         } catch (Exception e) {
             logger.info(e.getMessage());

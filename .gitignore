@@ -1,0 +1,12 @@
+# Project exclude paths
+/backend/hitch-account/target/
+/backend/hitch-commons/target/
+/backend/hitch-gateway/target/
+/backend/hitch-modules/target/
+/backend/hitch-notice/target/
+/backend/hitch-order/target/
+/backend/hitch-payment/target/
+/backend/hitch-storage/target/
+/backend/hitch-stroke/target/
+/Licenseplate/target/
+/openCVTest/target/

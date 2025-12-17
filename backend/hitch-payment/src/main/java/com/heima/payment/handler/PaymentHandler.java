@@ -19,7 +19,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class PaymentHandler {
     @Autowired
-    private PayService payService;
+    private PayService wxPayService;
+
+    @Autowired
+    private PayService aliPayService;
 
     @Autowired
     private PaymentAPIService paymentAPIService;
@@ -36,9 +39,14 @@ public class PaymentHandler {
      */
     public ResponseVO<PaymentVO> prePay(PaymentVO paymentVO) throws Exception {
         OrderPO orderPO = checkOrder(paymentVO);
-        PayResultBO payResultBO = payService.prePay(orderPO);
-        addPayOrder(paymentVO, payResultBO);
+        System.out.println("PrePay request, channel=" + paymentVO.getChannel() + ", orderId=" + paymentVO.getOrderId());
+        PayResultBO payResultBO = getPayService(paymentVO.getChannel()).prePay(orderPO);
+        addPayOrder(paymentVO, payResultBO, orderPO);
         ReflectUtils.copyProperties(payResultBO, paymentVO);
+        // 调试：打印返回给前端的支付信息（包含 codeUrl）
+        System.out.println("PrePay result, channel=" + paymentVO.getChannel()
+                + ", orderId=" + paymentVO.getOrderId()
+                + ", codeUrl=" + paymentVO.getCodeUrl());
         return ResponseVO.success(paymentVO);
     }
 
@@ -53,13 +61,14 @@ public class PaymentHandler {
     public ResponseVO<OrderVO> orderQuery(PaymentVO paymentVO) throws Exception {
         OrderPO orderPO = checkOrder(paymentVO);
         PaymentPO paymentPO = paymentAPIService.selectByOrderId(orderPO.getId());
+        // 如果还没有生成支付记录，认为支付尚未发起/未完成，直接返回订单信息，不抛异常
         if (paymentPO == null) {
-            throw new BusinessRuntimeException(BusinessErrors.DATA_NOT_EXIST);
+            return ResponseVO.success(orderPO, "未支付");
         }
         //如果支付未完成
         if (orderPO.getStatus() == 1) {
             //查询支付状态
-            PayResultBO payResultBO = payService.orderQuery(orderPO.getId());
+            PayResultBO payResultBO = getPayService(paymentPO.getChannel()).orderQuery(orderPO.getId());
             //如果支付成功修改订单状态
             if (null != payResultBO) {
                 paymentPO.setPayInfo(payResultBO.getPayInfo());
@@ -97,11 +106,13 @@ public class PaymentHandler {
      *
      * @param paymentVO
      */
-    private void addPayOrder(PaymentVO paymentVO, PayResultBO payResultBO) {
+    private void addPayOrder(PaymentVO paymentVO, PayResultBO payResultBO, OrderPO orderPO) {
         PaymentPO paymentPO = CommonsUtils.toPO(paymentVO);
         paymentPO.setPrepayId(payResultBO.getPrepayId());
-        paymentPO.setAmount(1F);
-        paymentPO.setChannel(1);
+        // 记录真实支付金额（订单价格），单位：元
+        paymentPO.setAmount(orderPO.getCost());
+        // 按照请求中的渠道保存（1-支付宝，2-微信），默认微信
+        paymentPO.setChannel(paymentVO.getChannel() == null ? 2 : paymentVO.getChannel());
         paymentPO.setTransactionOrderNum("1");
         paymentAPIService.add(paymentPO);
     }
@@ -126,5 +137,20 @@ public class PaymentHandler {
         return orderPO;
     }
 
+    /**
+     * 根据支付渠道选择具体的支付实现
+     *
+     * @param channel 支付渠道 支付宝：1（默认） 微信：2
+     * @return PayService 实现
+     */
+    private PayService getPayService(Integer channel) {
+        System.out.println("Select PayService by channel=" + channel);
+        // 默认以及 channel==1 走支付宝
+        if (channel == null || channel == 1) {
+            return aliPayService;
+        }
+        // 只有明确为 2 时走微信
+        return wxPayService;
+    }
 
 }

@@ -2,8 +2,8 @@ spring:
   rabbitmq:
     host: @rabbit.host@
     port: @rabbit.port@
-    username: admin
-    password: admin
+    username: guest
+    password: guest
     virtual-host: /
     publisher-returns: true
     listener:
@@ -42,7 +42,6 @@ spring:
         max-wait: 1000
         max-idle: 500
         min-idle: 0
-    password: 123456
   data:
     mongodb:
       host: @mongo.host@
@@ -50,7 +49,15 @@ spring:
       database: location
 baidu:
   map:
-    ak: EoHbxdtKC097db8DVk1Qq1LVe1Ip2Yx4
+    ak: 3cRYBzZoizefbQnXD22kpiTdaDWeun2b
+
+# 增加Feign客户端超时设置
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 100000    # 连接超时5秒
+        readTimeout: 30000      # 读取超时30秒
 
 #logging:
 #  level:

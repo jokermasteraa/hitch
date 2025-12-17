@@ -10,7 +10,7 @@ spring:
     type: com.alibaba.druid.pool.DruidDataSource
     driverClassName: com.mysql.jdbc.Driver
     url: jdbc:mysql://@mysql.addr@/hitch?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
-    username: root
+    username: dev
     password: 123456
     initialSize: 10
     minIdle: 20
@@ -52,13 +52,14 @@ spring:
       max-request-size: 10MB
 
 fdfs:
-  so-timeout: 3000
-  connect-timeout: 1000
+  so-timeout: 30000
+  connect-timeout: 10000
   thumb-image:
     width: 60
     height: 60
   tracker-list:
-    - @fastdfs.addr@
+    - 47.109.192.91:22122
+  
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml

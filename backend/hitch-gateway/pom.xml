@@ -13,7 +13,7 @@
 
     <properties>
         <!--启动服务端口号-->
-        <project.server.prot>8888</project.server.prot>
+        <project.server.prot>9000</project.server.prot>
         <!--启动服务名称-->
         <project.server.name>${artifactId}-server</project.server.name>
     </properties>
